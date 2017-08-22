@@ -376,7 +376,6 @@ class Piece:
         return cls(new_board, move.destination_coordinate, move.moved_piece.color)
 
     def update_board(self, new_board: 'Board') -> 'Piece':
-        print()
         return self.__class__(new_board, self.piece_position, self.color)
 
     def __repr__(self):
@@ -394,20 +393,26 @@ class Piece:
         moves = []
         position_vector = algebraic_notation_to_vector(self.piece_position)
         for move_vector in move_vectors:
-            candidate_destination_vector = position_vector
+            candidate_destination_vector = position_vector + move_vector
+            if not is_vector_coordinate_valid(candidate_destination_vector):
+                continue
             candidate_destination_square = vector_to_algebraic_notation(candidate_destination_vector)
+
             while self.board[candidate_destination_square] is None:
                 if not is_vector_coordinate_valid(candidate_destination_vector):
                     break
                 if decorator_class is None:
-                    moves.append(Move(self.board, self, candidate_destination_square))
+                    moves.append(NormalMove(self.board, self, candidate_destination_square))
                 else:
-                    moves.append(decorator_class(Move(self.board, self, candidate_destination_square)))
+                    moves.append(decorator_class(NormalMove(self.board, self, candidate_destination_square)))
                 candidate_destination_vector += move_vector
+                if not is_vector_coordinate_valid(candidate_destination_vector):
+                    break
                 candidate_destination_square = vector_to_algebraic_notation(candidate_destination_vector)
             else:
                 candidate_captured_piece: 'Piece' = self.board[candidate_destination_square]
                 if candidate_captured_piece.color != self.color:
+
                     if decorator_class is None:
                         moves.append(
                             CaptureMove(self.board, self, candidate_destination_square, candidate_captured_piece)
@@ -452,10 +457,11 @@ class Queen(Piece):
         return 'Q' if self.color == WHITE else 'q'
 
     def calculate_piece_moves(self) -> List['Move']:
-        return self.calculate_moves_through_unoccupied_squares([
+        a = self.calculate_moves_through_unoccupied_squares([
             np.array(direction) for direction in
             ((1, 0), (1, -1), (0, -1), (-1, -1), (-1, 0), (-1, 1), (0, 1), (1, 1))
         ])
+        return a
 
 
 class Rook(Piece):
@@ -812,8 +818,6 @@ class QueenSideCastleMove(CastleMove):
 
 
 if __name__ == '__main__':
-    b = Board.create_standard_board()
-    print(b.current_player.calculate_legal_moves()[0].execute())
-    print(b.current_player.color)
-    print(b.current_player.calculate_legal_moves()[0].execute())
-    print(b.current_player.color)
+    b = Board.from_FEN("r1bqkbnr/pppppppp/8/8/8/8/PPnPPPPP/RNBQKBNR w KQkq - 1 4")
+    print(b)
+    print([str(i) for i in b.current_player.calculate_legal_moves()])
