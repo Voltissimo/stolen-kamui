@@ -1,5 +1,6 @@
+from typing import Dict, List, Type, Union
+
 import numpy as np
-from typing import List, Type, Union
 
 #########
 # CONST #
@@ -110,6 +111,26 @@ class Player:
         return castling_moves
 
     def calculate_legal_moves(self) -> List['Move']:
+        """
+        :return: the moves this player is allowed to make
+
+        >>> set([str(move) for move in Board.from_FEN(
+        ...        "r1bqkbnr/pppp1ppp/8/8/3PP3/5n2/PPP2PPP/RNBQKB1R w KQkq - 1 4"
+        ...    ).current_player.calculate_legal_moves()]) == {'gxf3', 'Qxf3', 'Ke2'}
+        True
+        >>> "O-O" in set([str(move) for move in Board.from_FEN(
+        ...        "r1bqkb1r/ppp2ppp/3p1n2/8/3PP3/5P2/PPP2PBP/RNBQK2R w KQkq - 1 4"
+        ...    ).current_player.calculate_legal_moves()])
+        True
+        >>> "O-O" in set([str(move) for move in Board.from_FEN(
+        ...        "r1bqkb1r/pppp1ppp/5n2/8/3PP3/5PP/PPP2PB1/RNBQK2R w Qkq - 1 4"
+        ...    ).current_player.calculate_legal_moves()])
+        False
+        >>> "O-O-O" in set([str(move) for move in Board.from_FEN(
+        ...        "rnbqkbnr/8/pppppppp/8/PPPPPPPP/8/NQB5/R3KBNR w KQkq - 0 1"
+        ...    ).current_player.calculate_legal_moves()])
+        True
+        """
         legal_moves = []
         for move in self.moves + self.calculate_castling_moves():
             transition_board = move.execute()
@@ -330,13 +351,48 @@ class Board:
                                    black_king, black_active_pieces, black_king_side_castle, black_queen_side_castle)
         self.current_player = self.white_player if self.active_color == WHITE else self.black_player
 
-    def create_move(self, source_square: str, destination_square: str) -> dict:
+    def create_move(self, source_square: str, destination_square: str) -> Dict[str, Union['Board', bool]]:
         """
         Create a move from the source and destination coordinates and execute it
 
         :param source_square: the square where the piece is located
         :param destination_square: the destination square of the move
         :return: a dictionary, {"success": bool, "board": Board}
+
+        >>> Board.create_standard_board().create_move("d2", "d4")["board"]
+        r n b q k b n r
+        p p p p p p p p
+        - - - - - - - -
+        - - - - - - - -
+        - - - P - - - -
+        - - - - - - - -
+        P P P - P P P P
+        R N B Q K B N R
+        >>> Board.create_standard_board().create_move("d2", "d4")["board"].en_passant_position
+        'd3'
+        >>> Board.create_standard_board().create_move("d2", "d4")["board"].create_move("d7", "d5")["board"]
+        r n b q k b n r
+        p p p - p p p p
+        - - - - - - - -
+        - - - p - - - -
+        - - - P - - - -
+        - - - - - - - -
+        P P P - P P P P
+        R N B Q K B N R
+        >>> Board.create_standard_board().create_move("d2", "d1")["success"]
+        False
+        >>> Board.create_standard_board().create_move(
+        ...        "e2", "e4"
+        ...    )["board"].create_move(
+        ...        "d7", "d5"
+        ...    )["board"].create_move(
+        ...        "e4", "d5"
+        ...    )["board"].create_move(
+        ...        "c7", "c5"
+        ...    )["board"].create_move(
+        ...        "d5", "c6"
+        ...    )["success"]
+        True
         """
         for move in self.current_player.calculate_legal_moves():
             if move.moved_piece.piece_position == source_square and move.destination_coordinate == destination_square:
@@ -399,8 +455,7 @@ class Piece:
             candidate_destination_square = vector_to_algebraic_notation(candidate_destination_vector)
 
             while self.board[candidate_destination_square] is None:
-                if not is_vector_coordinate_valid(candidate_destination_vector):
-                    break
+                candidate_destination_square = vector_to_algebraic_notation(candidate_destination_vector)
                 if decorator_class is None:
                     moves.append(NormalMove(self.board, self, candidate_destination_square))
                 else:
@@ -410,6 +465,8 @@ class Piece:
                     break
                 candidate_destination_square = vector_to_algebraic_notation(candidate_destination_vector)
             else:
+                if not is_vector_coordinate_valid(candidate_destination_vector):
+                    continue
                 candidate_captured_piece: 'Piece' = self.board[candidate_destination_square]
                 if candidate_captured_piece.color != self.color:
 
@@ -569,7 +626,7 @@ class Pawn(Piece):
                         )
                     ]
                     piece_moves.append(
-                        PawnEnPassantMove(self.board, self, candidate_destination_square, en_passant_pawn)
+                        PawnCaptureMove(self.board, self, candidate_destination_square, en_passant_pawn)
                     )
         return piece_moves
 
@@ -592,12 +649,21 @@ class Move:
     def execute(self) -> 'Board':
         raise NotImplementedError
 
+    def calculate_move_suffix(self) -> str:
+        suffix = ""
+        board = self.execute()
+        if board.current_player.is_in_checkmate():
+            suffix = "#"
+        elif board.current_player.is_in_check():
+            suffix = "+"
+        return suffix
+
 
 class NormalMove(Move):
     def execute(self) -> 'Board':
         board = Board(self.board.current_player.get_opponent().color,
-                      self.board.half_move_clock,
-                      int(self.board.full_move_number) + 1)
+                      self.board.half_move_clock + 1,
+                      self.board.full_move_number + 1)
         for piece in self.board.current_player.get_opponent().active_pieces:
             board[piece.piece_position] = piece.update_board(board)
         for piece in self.board.current_player.active_pieces:
@@ -614,7 +680,7 @@ class NormalMove(Move):
         return board
 
     def __str__(self) -> str:
-        return str(self.moved_piece).upper() + self.destination_coordinate  # TODO specify the file when ok for 2 moves?
+        return str(self.moved_piece).upper() + self.destination_coordinate + self.calculate_move_suffix()
 
 
 class CaptureMove(Move):
@@ -624,8 +690,8 @@ class CaptureMove(Move):
 
     def execute(self) -> 'Board':
         board = Board(self.board.current_player.get_opponent().color,
-                      self.board.half_move_clock,
-                      int(self.board.full_move_number) + 1)
+                      0,
+                      self.board.full_move_number + 1)
         for piece in self.board.current_player.get_opponent().active_pieces:
             if piece != self.captured_piece:
                 board[piece.piece_position] = piece.update_board(board)
@@ -643,10 +709,15 @@ class CaptureMove(Move):
         return board
 
     def __str__(self):
-        return str(self.moved_piece).upper() + 'x' + self.destination_coordinate  # TODO same as above
+        return str(self.moved_piece).upper() + 'x' + self.destination_coordinate + self.calculate_move_suffix()
 
 
 class PawnMove(NormalMove):
+    def execute(self) -> 'Board':
+        board = super().execute()
+        board.half_move_clock = 0
+        return board
+
     def __str__(self):
         return self.destination_coordinate
 
@@ -654,28 +725,24 @@ class PawnMove(NormalMove):
 class PawnJumpMove(PawnMove):
     def execute(self) -> 'Board':
         board = super().execute()
+        board.half_move_clock = 0
         en_passant_square = vector_to_algebraic_notation(
-            algebraic_notation_to_vector(self.moved_piece.piece_position)
+            algebraic_notation_to_vector(self.destination_coordinate)
             - get_pawn_advance_direction(self.moved_piece.color) * np.array([1, 0])
         )
         board.en_passant_position = en_passant_square
-        # board.load_players(
-        #     self.board.white_player.king_side_castle_availability,
-        #     self.board.white_player.queen_side_castle_availability,
-        #     self.board.black_player.king_side_castle_availability,
-        #     self.board.black_player.queen_side_castle_availability
-        # )
+        board.load_players(
+            self.board.white_player.king_side_castle_availability,
+            self.board.white_player.queen_side_castle_availability,
+            self.board.black_player.king_side_castle_availability,
+            self.board.black_player.queen_side_castle_availability
+        )
         return board
 
 
 class PawnCaptureMove(CaptureMove):
     def __str__(self):
-        return self.moved_piece.piece_position[0] + 'x' + self.destination_coordinate
-
-
-class PawnEnPassantMove(PawnCaptureMove):
-    def __str__(self):
-        return self.moved_piece.piece_position[0] + 'x' + self.destination_coordinate + 'e.p.'
+        return self.moved_piece.piece_position[0] + 'x' + self.destination_coordinate + self.calculate_move_suffix()
 
 
 class PawnPromotionMove(Move):
@@ -699,7 +766,7 @@ class PawnPromotionMove(Move):
         return board
 
     def __str__(self):
-        return str(self.decorated_move)
+        return str(self.decorated_move).replace("+", "").replace("#", "") + self.calculate_move_suffix()
 
 
 class KingMove(Move):
@@ -768,7 +835,7 @@ class CastleMove(Move):
 
     def execute(self) -> 'Board':
         board = Board(self.board.current_player.get_opponent().color,
-                      self.board.half_move_clock,
+                      self.board.half_move_clock + 1,
                       int(self.board.full_move_number) + 1)
         for piece in self.board.current_player.get_opponent().active_pieces:
             board[piece.piece_position] = piece.update_board(board)
@@ -818,6 +885,10 @@ class QueenSideCastleMove(CastleMove):
 
 
 if __name__ == '__main__':
+<<<<<<< HEAD
     b = Board.from_FEN("r1bqkbnr/pppppppp/8/8/8/8/PPnPPPPP/RNBQKBNR w KQkq - 1 4")
     print(b)
     print([str(i) for i in b.current_player.calculate_legal_moves()])
+=======
+    pass
+>>>>>>> upstream/master
