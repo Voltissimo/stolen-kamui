@@ -139,7 +139,7 @@ class Player:
         return moves
 
     def get_opponent(self) -> 'Player':
-        return self.board.black_player if self.color == WHITE else self.board.black_player
+        return self.board.black_player if self.color == WHITE else self.board.white_player
 
 
 #########
@@ -376,7 +376,8 @@ class Piece:
         return cls(new_board, move.destination_coordinate, move.moved_piece.color)
 
     def update_board(self, new_board: 'Board') -> 'Piece':
-        return type(self)(new_board, self.piece_position, self.color)
+        print()
+        return self.__class__(new_board, self.piece_position, self.color)
 
     def __repr__(self):
         raise NotImplementedError
@@ -808,3 +809,11 @@ class QueenSideCastleMove(CastleMove):
 
     def __str__(self):
         return "O-O-O"
+
+
+if __name__ == '__main__':
+    b = Board.create_standard_board()
+    print(b.current_player.calculate_legal_moves()[0].execute())
+    print(b.current_player.color)
+    print(b.current_player.calculate_legal_moves()[0].execute())
+    print(b.current_player.color)
